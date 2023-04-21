@@ -1,3 +1,4 @@
+#include <stdio.h>   // -> std*
 #include <stdlib.h>  // -> size_t
 #include <stdbool.h> // -> bool
 
@@ -24,9 +25,9 @@ typedef struct {
 span read_line(char *buff, size_t buff_size) {
 	size_t len = 0;
 	for (; len < buff_size - 1; len++) {
-		char ch = fgetc(stdin);
+		int ch = fgetc(stdin);
 		if (ch < 0x20) break;
-		buff[len] = ch;
+		buff[len] = (char)ch;
 	}
 	buff[len] = '\0';
 	return (span) {buff, len};

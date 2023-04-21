@@ -68,6 +68,7 @@ int main() {
 	struct sockaddr *servaddr_p = (struct sockaddr *)&servaddr;
 	if (bind(sockfd, servaddr_p, sizeof(servaddr)) == -1) {
 		perror("couldn't bind socket\n");
+		close(sockfd);
 		exit(EXIT_FAILURE);
 	}
 	printf("Socket successfully bound!\n");
