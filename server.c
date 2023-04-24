@@ -5,56 +5,75 @@
 #include <ctype.h>
 #include <string.h>
 
+// #include <sys/types.h>
 #include <sys/socket.h>
 
-#include <netdb.h>
 #include <unistd.h>    // -> write, read
+#include <fcntl.h>     // -> open
+// #include <netdb.h>
 #include <arpa/inet.h> // -> htons
 
 #include "common.h"
 
 // Function designed for chat between client and server.
-void func(int sockfd, size_t buff_size) {
+void func(int sockfd, FILE *outfile, size_t buff_size) {
 	char *buff = malloc(buff_size);
 
-	forever {
-		// read string from client into buffer
-		bzero(buff, buff_size);
-		read(sockfd, buff, buff_size);
-		printf("From Client: %s\n", buff);
+	size_t amount = 0;
+	do {
+		// read data from client into buffer
+		amount = read(sockfd, buff, buff_size);
+		printf("From Client:\n");
 
-		// write a prompt
-		printf("Send a string: ");
-		fflush(stdout); // flush since we didn't write a full line
-
-		// read string from stdin
-		bzero(buff, buff_size);
-		span line_s = read_line(buff, buff_size);
-
-		// trim the string's whitespace
-		span msg_s = destructive_trim((char *)line_s.ptr, buff_size);
-
-		// send it thru the socket
-		write(sockfd, msg_s.ptr, msg_s.len);
-
-		// exit if you said to.
-		if (strncmp(buff, "exit", 5) == 0) {
-			printf("Server Exit...\n");
-			break;
-		}
-	}
+		// display it
+		for (size_t i = 0; i < amount; fputc(buff[i++], stdout)) {}
+		fputc('\n', stdout);
+	} while (amount > 0);
 
 	free(buff);
 }
 
-int main() {
+int main(int argc, char *argv[]) {
+	if (argc != 2 && argc != 3) {
+		char *me = argc > 0 ? argv[0] : "server";
+		fprintf(stderr,
+			"usage: %s out_file [buffer_size]\n"
+			"if buffer size is not specified, it defaults to 128.\n",
+			me);
+		exit(EXIT_FAILURE);
+	}
+
+	size_t buff_size = BUFF_LEN;
+	if (argc == 3) {
+		// atoi doesn't have good error handling,
+		// but nothing bad should happen.
+		buff_size = atoi(argv[2]);
+	}
+
+	// sane minimum
+	if (buff_size < BUFF_MIN) {
+		buff_size = BUFF_MIN;
+		fprintf(stderr, "given buffer size was way too small! it's %d now.\n",
+			BUFF_MIN);
+	}
+
+	// create the output file before we do any socket stuff
+	FILE *outfile = fopen(argv[1], "w");
+	if (outfile == NULL) {
+		perror("couldn't create output file");
+		exit(EXIT_FAILURE);
+	}
+
 	// make a new socket
-	int sockfd = socket(AF_INET, SOCK_STREAM, 0);
+	int sockfd = socket(AF_INET, SOCK_SEQPACKET, 0);
 	if (sockfd == -1) {
 		perror("couldn't make socket");
 		exit(EXIT_FAILURE);
 	}
 	printf("Created socket!\n");
+
+	// (soon to be) adapted from this guide:
+	// https://beej.us/guide/bgnet/html/#getaddrinfoprepare-to-launch
 
 	struct sockaddr_in servaddr;
 	bzero(&servaddr, sizeof(servaddr));
@@ -69,6 +88,7 @@ int main() {
 	if (bind(sockfd, servaddr_p, sizeof(servaddr)) == -1) {
 		perror("couldn't bind socket\n");
 		close(sockfd);
+		fclose(outfile);
 		exit(EXIT_FAILURE);
 	}
 	printf("Socket successfully bound!\n");
@@ -77,6 +97,7 @@ int main() {
 	if (listen(sockfd, 5) == -1) {
 		perror("couldn't listen for clients");
 		close(sockfd);
+		fclose(outfile);
 		exit(EXIT_FAILURE);
 	}
 	printf("Server listening...\n");
@@ -90,15 +111,19 @@ int main() {
 	if (connfd == -1) {
 		perror("server acccept failed...\n");
 		close(sockfd);
+		fclose(outfile);
 		exit(EXIT_FAILURE);
 	}
 	printf("Server accepted a client!\n");
 
 	// Function for chatting between client and server
-	func(connfd, BUFF_LEN);
+	func(connfd, outfile, BUFF_LEN);
 
 	// After chatting close the socket
 	close(sockfd);
+
+	// close the output file
+	fclose(outfile);
 
 	exit(EXIT_SUCCESS);
 }

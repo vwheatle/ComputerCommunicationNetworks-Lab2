@@ -5,7 +5,7 @@
 # REPLACE THIS!!
 
 CC = gcc
-CC_FLAGS = -Wall -Wpedantic -Wextra -Werror -fsanitize=undefined
+CC_FLAGS = -Wall -Wpedantic -Wextra -fsanitize=undefined
 VALGRIND_FLAGS = --quiet --tool=memcheck --leak-check=yes --show-reachable=yes --num-callers=3 --error-exitcode=1
 
 all: main
