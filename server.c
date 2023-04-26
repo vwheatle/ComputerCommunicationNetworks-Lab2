@@ -1,39 +1,48 @@
-#include <stdlib.h>
-#include <stdio.h>
-#include <stdbool.h>
+#include <stdlib.h>  // -> EXIT_*
+#include <stdio.h>   // -> printf, fopen, ...
+#include <stdbool.h> // -> bool
 
-#include <ctype.h>
-#include <string.h>
-
-// #include <sys/types.h>
+#include <sys/types.h>
 #include <sys/socket.h>
 
 #include <unistd.h>    // -> write, read
 #include <fcntl.h>     // -> open
-// #include <netdb.h>
+#include <netdb.h>     // -> getaddrinfo
 #include <arpa/inet.h> // -> htons
 
 #include "common.h"
 
 // Function designed for chat between client and server.
 void func(int sockfd, FILE *outfile, size_t buff_size) {
-	char *buff = malloc(buff_size);
+	size_t packet_size = sizeof(my_packet) + buff_size;
+	my_packet *packet = malloc(packet_size);
 
-	size_t amount = 0;
+	size_t num_bytes = 0;
 	do {
 		// read data from client into buffer
-		amount = read(sockfd, buff, buff_size);
-		printf("From Client:\n");
+		num_bytes = read(sockfd, packet, packet_size);
+		if (num_bytes <= sizeof(my_packet)) break;
+
+		// convert the length back into a usable number
+		packet->length = ntohl(packet->length);
+
+		printf("Receiving %zd-byte buffer from Client.\n",
+			num_bytes - sizeof(my_packet));
 
 		// display it
-		for (size_t i = 0; i < amount; fputc(buff[i++], stdout)) {}
+		for (size_t i = 0; i < num_bytes; i++) fputc(packet->buffer[i], stdout);
 		fputc('\n', stdout);
-	} while (amount > 0);
 
-	free(buff);
+		// write it into the destination file
+		fwrite(packet->buffer, sizeof(char), packet->length, outfile);
+	} while (packet->length > buff_size);
+
+	free(packet);
 }
 
 int main(int argc, char *argv[]) {
+	// The Boilerplate
+
 	if (argc != 2 && argc != 3) {
 		char *me = argc > 0 ? argv[0] : "server";
 		fprintf(stderr,
@@ -64,39 +73,53 @@ int main(int argc, char *argv[]) {
 		exit(EXIT_FAILURE);
 	}
 
-	// make a new socket
-	int sockfd = socket(AF_INET, SOCK_SEQPACKET, 0);
+	// The Networking Stuff
+
+	// adapted from this guide:
+	// https://beej.us/guide/bgnet/html/#getaddrinfoprepare-to-launch
+
+	// give getaddrinfo some hints on what we want from the helper object
+	struct addrinfo hints;
+	bzero(&hints, sizeof(hints));
+	hints.ai_family = AF_UNSPEC; // don't care if IPv4 or IPv6
+	hints.ai_socktype = SOCK_SEQPACKET;
+	hints.ai_flags = AI_PASSIVE; // like INADDR_ANY
+
+	// make the fancy getaddrinfo helper object!
+	struct addrinfo *svinfo;
+	int gai_status = getaddrinfo(NULL, as_a_string(PORT), &hints, &svinfo);
+	if (gai_status != 0) {
+		fprintf(stderr, "getaddrinfo error: %s\n", gai_strerror(gai_status));
+		fclose(outfile);
+		exit(EXIT_FAILURE);
+	}
+
+	// make a new socket from the address info
+	int sockfd =
+		socket(svinfo->ai_family, svinfo->ai_socktype, svinfo->ai_protocol);
 	if (sockfd == -1) {
 		perror("couldn't make socket");
+		freeaddrinfo(svinfo);
+		fclose(outfile);
 		exit(EXIT_FAILURE);
 	}
 	printf("Created socket!\n");
 
-	// (soon to be) adapted from this guide:
-	// https://beej.us/guide/bgnet/html/#getaddrinfoprepare-to-launch
-
-	struct sockaddr_in servaddr;
-	bzero(&servaddr, sizeof(servaddr));
-
-	// assign IP, PORT
-	servaddr.sin_family = AF_INET;
-	servaddr.sin_addr.s_addr = htonl(INADDR_ANY);
-	servaddr.sin_port = htons(PORT);
-
-	// Binding newly created socket to given IP and verification
-	struct sockaddr *servaddr_p = (struct sockaddr *)&servaddr;
-	if (bind(sockfd, servaddr_p, sizeof(servaddr)) == -1) {
+	// binding our new socket to the given IP
+	if (bind(sockfd, svinfo->ai_addr, svinfo->ai_addrlen) == -1) {
 		perror("couldn't bind socket\n");
 		close(sockfd);
+		freeaddrinfo(svinfo);
 		fclose(outfile);
 		exit(EXIT_FAILURE);
 	}
 	printf("Socket successfully bound!\n");
 
-	// Now server is ready to listen and verification
+	// start listening for clients
 	if (listen(sockfd, 5) == -1) {
 		perror("couldn't listen for clients");
 		close(sockfd);
+		freeaddrinfo(svinfo);
 		fclose(outfile);
 		exit(EXIT_FAILURE);
 	}
@@ -105,22 +128,28 @@ int main(int argc, char *argv[]) {
 	struct sockaddr_in clientaddr;
 	socklen_t clientlen = sizeof(clientaddr);
 
-	// Accept the data packet from client and verification
+	// accept the data packet from client and verification
 	struct sockaddr *clientaddr_p = (struct sockaddr *)&clientaddr;
 	int connfd = accept(sockfd, clientaddr_p, &clientlen);
 	if (connfd == -1) {
 		perror("server acccept failed...\n");
 		close(sockfd);
+		freeaddrinfo(svinfo);
 		fclose(outfile);
 		exit(EXIT_FAILURE);
 	}
 	printf("Server accepted a client!\n");
 
-	// Function for chatting between client and server
+	// thing to do once we know we have established a server-client connection.
 	func(connfd, outfile, BUFF_LEN);
 
-	// After chatting close the socket
+	// Cleanup
+
+	// close the socket
 	close(sockfd);
+
+	// free the fancy linked-list address info object
+	freeaddrinfo(svinfo);
 
 	// close the output file
 	fclose(outfile);

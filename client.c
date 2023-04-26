@@ -1,31 +1,41 @@
-#include <stdlib.h>
-#include <stdio.h>
-#include <stdbool.h>
+#include <stdlib.h>  // -> EXIT_*
+#include <stdio.h>   // -> printf, fopen, ...
+#include <stdbool.h> // -> bool
 
-#include <ctype.h>
-#include <string.h>
-
+#include <sys/types.h>
 #include <sys/socket.h>
 
 #include <unistd.h>    // -> write, read
 #include <fcntl.h>     // -> open
-// #include <netdb.h>
+#include <netdb.h>     // -> getaddrinfo
 #include <arpa/inet.h> // -> htons
 
 #include "common.h"
 
 // Function designed for chat between client and server.
 void func(int sockfd, FILE *datafile, size_t buff_size) {
-	char *buff = malloc(buff_size);
+	size_t packet_size = sizeof(my_packet) + buff_size;
+	my_packet *packet = malloc(packet_size);
 
+	size_t num_bytes;
 	while (!feof(datafile) && !ferror(datafile)) {
 		// fill the buffer with new data from the data file
-		size_t num_bytes = fread(buff, 1, buff_size, datafile);
+		num_bytes = fread(packet->buffer, 1, buff_size, datafile);
 
-		printf("Sending %zd bytes.\n", num_bytes);
+		// add some metadata telling how many bytes the content takes up.
+		packet->length = htonl((uint32_t)num_bytes);
+
+		printf("Sending %zd-byte buffer.\n", num_bytes);
 
 		// send it thru the socket
-		write(sockfd, buff, num_bytes);
+		write(sockfd, packet, num_bytes);
+	}
+
+	// corner case: if file is exactly divisible into buff_size chunks,
+	// we gotta inform the client that it's over.
+	if (num_bytes >= buff_size) {
+		packet->length = 0;
+		write(sockfd, packet, packet_size);
 	}
 
 	int error = ferror(datafile);
@@ -33,10 +43,12 @@ void func(int sockfd, FILE *datafile, size_t buff_size) {
 		fprintf(stderr, "an error occurred while reading the file.\n");
 	}
 
-	free(buff);
+	free(packet);
 }
 
 int main(int argc, char *argv[]) {
+	// Simple 2000: The Boilerplate
+
 	if (argc != 2 && argc != 3) {
 		char *me = argc > 0 ? argv[0] : "client";
 		fprintf(stderr,
@@ -69,48 +81,58 @@ int main(int argc, char *argv[]) {
 		exit(EXIT_FAILURE);
 	}
 
+	// The Networking Stuff
+
+	// adapted from this guide:
+	// https://beej.us/guide/bgnet/html/#getaddrinfoprepare-to-launch
+
+	// give getaddrinfo some hints on what we want from the helper object
+	struct addrinfo hints;
+	bzero(&hints, sizeof(hints));
+	hints.ai_family = AF_UNSPEC; // don't care if IPv4 or IPv6
+	hints.ai_socktype = SOCK_SEQPACKET;
+
+	// make the fancy getaddrinfo helper object!
+	struct addrinfo *svinfo;
+	int gai_status =
+		getaddrinfo("127.0.0.1", as_a_string(PORT), &hints, &svinfo);
+	if (gai_status != 0) {
+		fprintf(stderr, "getaddrinfo error: %s\n", gai_strerror(gai_status));
+		fclose(datafile);
+		exit(EXIT_FAILURE);
+	}
+
 	// make a new socket
-	int sockfd = socket(AF_INET, SOCK_SEQPACKET, 0);
+	int sockfd =
+		socket(svinfo->ai_family, svinfo->ai_socktype, svinfo->ai_protocol);
 	if (sockfd == -1) {
 		perror("couldn't make socket");
+		freeaddrinfo(svinfo);
 		fclose(datafile);
 		exit(EXIT_FAILURE);
 	}
 	printf("Created socket!\n");
 
-	struct sockaddr_in servaddr;
-	bzero(&servaddr, sizeof(servaddr));
-
-	// set up an address for the socket to use
-	servaddr.sin_family = AF_INET;
-	servaddr.sin_port = htons(PORT);
-	int result = inet_pton(AF_INET, "127.0.0.1", &(servaddr.sin_addr));
-	if (result <= 0) {
-		if (result == -1) {
-			perror("couldn't convert address");
-		} else if (result == 0) {
-			fprintf(stderr, "invalid address\n");
-		}
-		fclose(datafile);
-		exit(EXIT_FAILURE);
-	}
-
 	// connect the client socket to server socket
-	struct sockaddr *servaddr_p = (struct sockaddr *)&servaddr;
-	if (connect(sockfd, servaddr_p, sizeof(servaddr)) == -1) {
+	if (connect(sockfd, svinfo->ai_addr, svinfo->ai_addrlen) == -1) {
 		perror("couldn't connect to server");
 		close(sockfd);
+		freeaddrinfo(svinfo);
 		fclose(datafile);
 		exit(EXIT_FAILURE);
 	}
 	printf("Connected to server!\n");
 
-	// function for chat.
-	// takes a buffer size as its second parameter.
-	func(sockfd, datafile, buff_size);
+	// thing to do once we know we have established a server-client connection.
+	func(sockfd, datafile, BUFF_LEN);
+
+	// Cleanup
 
 	// close the socket connection
 	close(sockfd);
+
+	// free the fancy linked-list address info object
+	freeaddrinfo(svinfo);
 
 	// close the data file
 	fclose(datafile);

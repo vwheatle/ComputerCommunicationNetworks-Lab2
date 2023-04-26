@@ -1,8 +1,6 @@
 #
-# makefile for pong_game - like pong, including walls (paddle)
+# makefile for lab 2
 #
-
-# REPLACE THIS!!
 
 CC = gcc
 CC_FLAGS = -Wall -Wpedantic -Wextra -fsanitize=undefined
