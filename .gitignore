@@ -34,3 +34,5 @@ ex_*.*
 
 # Ignore drawio documents.
 *.drawio.*
+
+beemovie*.txt

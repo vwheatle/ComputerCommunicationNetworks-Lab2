@@ -28,7 +28,7 @@ void func(int sockfd, FILE *datafile, size_t buff_size) {
 		printf("Sending %zd-byte buffer.\n", num_bytes);
 
 		// send it thru the socket
-		write(sockfd, packet, num_bytes);
+		write(sockfd, packet, packet_size);
 	}
 
 	// corner case: if file is exactly divisible into buff_size chunks,
@@ -89,8 +89,10 @@ int main(int argc, char *argv[]) {
 	// give getaddrinfo some hints on what we want from the helper object
 	struct addrinfo hints;
 	bzero(&hints, sizeof(hints));
-	hints.ai_family = AF_UNSPEC; // don't care if IPv4 or IPv6
-	hints.ai_socktype = SOCK_SEQPACKET;
+	hints.ai_family = AF_UNSPEC;      // don't care if IPv4 or IPv6
+	hints.ai_socktype = SOCK_STREAM;  // must be SOCK_STREAM to be accept()ed
+	hints.ai_flags |= AI_NUMERICHOST; // the host will be an address
+	hints.ai_flags |= AI_NUMERICSERV; // the service will be a port number
 
 	// make the fancy getaddrinfo helper object!
 	struct addrinfo *svinfo;

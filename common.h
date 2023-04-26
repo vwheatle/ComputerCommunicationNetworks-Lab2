@@ -14,7 +14,8 @@ typedef struct {
 
 // and some funny other stuff to share
 
-#define as_a_string(x) #x
+#define as_a_string_eval(x) #x
+#define as_a_string(x)      as_a_string_eval(x)
 
 #define bzero(buff, size) memset(buff, 0, size)
 

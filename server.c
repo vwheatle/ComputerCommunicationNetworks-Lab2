@@ -25,17 +25,19 @@ void func(int sockfd, FILE *outfile, size_t buff_size) {
 
 		// convert the length back into a usable number
 		packet->length = ntohl(packet->length);
+		if (packet->length > buff_size) packet->length = (uint32_t)buff_size;
 
 		printf("Receiving %zd-byte buffer from Client.\n",
 			num_bytes - sizeof(my_packet));
 
 		// display it
-		for (size_t i = 0; i < num_bytes; i++) fputc(packet->buffer[i], stdout);
+		for (size_t i = 0; i < packet->length; i++)
+			fputc(packet->buffer[i], stdout);
 		fputc('\n', stdout);
 
 		// write it into the destination file
 		fwrite(packet->buffer, sizeof(char), packet->length, outfile);
-	} while (packet->length > buff_size);
+	} while (packet->length >= buff_size);
 
 	free(packet);
 }
@@ -81,9 +83,10 @@ int main(int argc, char *argv[]) {
 	// give getaddrinfo some hints on what we want from the helper object
 	struct addrinfo hints;
 	bzero(&hints, sizeof(hints));
-	hints.ai_family = AF_UNSPEC; // don't care if IPv4 or IPv6
-	hints.ai_socktype = SOCK_SEQPACKET;
-	hints.ai_flags = AI_PASSIVE; // like INADDR_ANY
+	hints.ai_family = AF_UNSPEC;      // don't care if IPv4 or IPv6
+	hints.ai_socktype = SOCK_STREAM;  // must be SOCK_STREAM to accept()
+	hints.ai_flags = AI_PASSIVE;      // like INADDR_ANY
+	hints.ai_flags |= AI_NUMERICSERV; // the service will be a port number
 
 	// make the fancy getaddrinfo helper object!
 	struct addrinfo *svinfo;
@@ -107,7 +110,7 @@ int main(int argc, char *argv[]) {
 
 	// binding our new socket to the given IP
 	if (bind(sockfd, svinfo->ai_addr, svinfo->ai_addrlen) == -1) {
-		perror("couldn't bind socket\n");
+		perror("couldn't bind socket");
 		close(sockfd);
 		freeaddrinfo(svinfo);
 		fclose(outfile);
@@ -132,7 +135,7 @@ int main(int argc, char *argv[]) {
 	struct sockaddr *clientaddr_p = (struct sockaddr *)&clientaddr;
 	int connfd = accept(sockfd, clientaddr_p, &clientlen);
 	if (connfd == -1) {
-		perror("server acccept failed...\n");
+		perror("server acccept failed");
 		close(sockfd);
 		freeaddrinfo(svinfo);
 		fclose(outfile);
