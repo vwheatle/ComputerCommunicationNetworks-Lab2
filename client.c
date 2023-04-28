@@ -126,7 +126,7 @@ int main(int argc, char *argv[]) {
 	printf("Connected to server!\n");
 
 	// thing to do once we know we have established a server-client connection.
-	func(sockfd, datafile, BUFF_LEN);
+	func(sockfd, datafile, buff_size);
 
 	// Cleanup
 

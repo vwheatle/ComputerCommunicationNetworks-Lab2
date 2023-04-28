@@ -144,7 +144,7 @@ int main(int argc, char *argv[]) {
 	printf("Server accepted a client!\n");
 
 	// thing to do once we know we have established a server-client connection.
-	func(connfd, outfile, BUFF_LEN);
+	func(connfd, outfile, buff_size);
 
 	// Cleanup
 
