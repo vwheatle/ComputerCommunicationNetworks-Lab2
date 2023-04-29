@@ -2,7 +2,7 @@
 #include <stdio.h>   // -> printf, fopen, ...
 #include <stdbool.h> // -> bool
 
-#include <sys/types.h>
+#include <sys/types.h> // -> size_t, ssize_t
 #include <sys/socket.h>
 
 #include <unistd.h>    // -> write, read
@@ -16,18 +16,19 @@
 void func(int sockfd, FILE *datafile, size_t buff_size) {
 	size_t packet_size = sizeof(my_packet) + buff_size;
 	my_packet *packet = malloc(packet_size);
+	bzero(packet, packet_size);
 
 	size_t num_bytes;
 	while (!feof(datafile) && !ferror(datafile)) {
 		// fill the buffer with new data from the data file
-		num_bytes = fread(packet->buffer, 1, buff_size, datafile);
+		num_bytes = fread(packet->buffer, sizeof(char), buff_size, datafile);
 
 		// add some metadata telling how many bytes the content takes up.
 		packet->length = htonl((uint32_t)num_bytes);
 
 		printf("Sending %zd-byte buffer.\n", num_bytes);
 
-		// send it thru the socket
+		// send data thru the socket
 		write(sockfd, packet, packet_size);
 	}
 

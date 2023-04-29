@@ -2,7 +2,7 @@
 #include <stdio.h>   // -> printf, fopen, ...
 #include <stdbool.h> // -> bool
 
-#include <sys/types.h>
+#include <sys/types.h> // -> size_t, ssize_t
 #include <sys/socket.h>
 
 #include <unistd.h>    // -> write, read
@@ -16,23 +16,32 @@
 void func(int sockfd, FILE *outfile, size_t buff_size) {
 	size_t packet_size = sizeof(my_packet) + buff_size;
 	my_packet *packet = malloc(packet_size);
+	bzero(packet, packet_size);
 
-	size_t num_bytes = 0;
+	ssize_t num_bytes = 0;
 	do {
-		// read data from client into buffer
+		// read data from socket into buffer
 		num_bytes = read(sockfd, packet, packet_size);
-		if (num_bytes <= sizeof(my_packet)) break;
+		if (num_bytes == -1) {
+			perror("socket read failed");
+			break; // oops, this means it'll exit with EXIT_SUCCESS...
+		}
+		if (num_bytes <= (ssize_t)sizeof(my_packet)) {
+			// TODO: what else should be an error? this is the bare minimum.
+			fprintf(stderr, "incomplete packet read\n");
+			break; // ...maybe that doesn't matter though.
+		}
 
 		// convert the length back into a usable number
 		packet->length = ntohl(packet->length);
+		// clamp it down to prevent out-of-bounds issues
 		if (packet->length > buff_size) packet->length = (uint32_t)buff_size;
 
 		printf("Receiving %zd-byte buffer from Client.\n",
-			num_bytes - sizeof(my_packet));
+			packet->length - sizeof(my_packet));
 
 		// display it
-		for (size_t i = 0; i < packet->length; i++)
-			fputc(packet->buffer[i], stdout);
+		fwrite(packet->buffer, sizeof(char), packet->length, stdout);
 		fputc('\n', stdout);
 
 		// write it into the destination file
