@@ -33,10 +33,9 @@ void func(int sockfd, FILE *outfile, size_t buff_size) {
 			break;
 		}
 
-		printf("Receiving %zd-byte packet.\n", num_bytes);
-
 		if (num_bytes <= (ssize_t)sizeof(my_packet)) {
-			fprintf(stderr, "incomplete packet read\n");
+			fprintf(stderr, "incomplete packet read (expected %zd, got %zd)\n",
+				packet_size, num_bytes);
 			response = make_response(RESPONSE_ERROR);
 			break;
 		}
@@ -47,9 +46,13 @@ void func(int sockfd, FILE *outfile, size_t buff_size) {
 		// if it's negative, an error occurred,
 		// and we don't need to send a response.
 		if (packet->length < 0) {
+			printf("Received error packet. Quitting.\n");
 			free(packet);
 			return;
 		}
+
+		printf("Receiving %zd-byte packet containing %d bytes of data.\n",
+			num_bytes, packet->length);
 
 		// clamp it down to prevent out-of-bounds issues
 		if (packet->length > (int32_t)buff_size)

@@ -28,10 +28,11 @@ void func(int sockfd, FILE *datafile, size_t buff_size) {
 		// fill the buffer with new data from the data file
 		num_bytes = fread(packet->buffer, sizeof(char), buff_size, datafile);
 
+		printf("Sending %zd-byte packet containing %zd bytes of data.\n",
+			packet_size, num_bytes);
+
 		// add some metadata telling how many bytes the content takes up.
 		packet->length = htonl((uint32_t)num_bytes);
-
-		printf("Sending %zd-byte packet.\n", num_bytes + sizeof(my_packet));
 
 		// send data thru the socket
 		write(sockfd, packet, packet_size);
