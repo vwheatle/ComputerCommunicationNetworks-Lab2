@@ -20,8 +20,8 @@ clean:
 	rm -f ./lab_client ./lab_server
 
 run-client:
-	valgrind $(VALGRIND_FLAGS) ./lab_client ./client.c $(THE_BUFFER_SIZE)
+	valgrind $(VALGRIND_FLAGS) ./lab_client ./file.txt $(THE_BUFFER_SIZE)
 
 run-server:
-	valgrind $(VALGRIND_FLAGS) ./lab_server ./client-recv.txt $(THE_BUFFER_SIZE)
-	diff -qs ./client.c ./client-recv.txt
+	valgrind $(VALGRIND_FLAGS) ./lab_server ./file-recv.txt $(THE_BUFFER_SIZE)
+	diff -qs ./file.txt ./file-recv.txt

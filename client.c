@@ -18,31 +18,37 @@ void func(int sockfd, FILE *datafile, size_t buff_size) {
 	my_packet *packet = malloc(packet_size);
 	bzero(packet, packet_size);
 
+	my_response response;
+
 	size_t num_bytes;
 	while (!feof(datafile) && !ferror(datafile)) {
+		read(sockfd, &response, sizeof(response));
+		if (response_status(response) != 0) break;
+
 		// fill the buffer with new data from the data file
 		num_bytes = fread(packet->buffer, sizeof(char), buff_size, datafile);
 
 		// add some metadata telling how many bytes the content takes up.
 		packet->length = htonl((uint32_t)num_bytes);
 
-		printf("Sending %zd-byte buffer.\n", num_bytes);
+		printf("Sending %zd-byte packet.\n", num_bytes + sizeof(my_packet));
 
 		// send data thru the socket
-		write(sockfd, packet, packet_size);
-	}
-
-	// corner case: if file is exactly divisible into buff_size chunks,
-	// we gotta inform the client that it's over.
-	if (num_bytes >= buff_size) {
-		packet->length = 0;
 		write(sockfd, packet, packet_size);
 	}
 
 	int error = ferror(datafile);
 	if (error != 0) {
 		fprintf(stderr, "an error occurred while reading the file.\n");
+		packet->length = -1;
+		write(sockfd, packet, packet_size);
+	} else if (response_status(response) == 0) {
+		// tell server there's no more to read if it didn't already quit
+		// (for example, if the file fits in an integer number of packets)
+		packet->length = 0;
+		write(sockfd, packet, packet_size);
 	}
+	// in either of these cases, you don't listen for the response.
 
 	free(packet);
 }

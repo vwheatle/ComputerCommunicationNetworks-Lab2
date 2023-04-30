@@ -9,6 +9,7 @@
 #include <fcntl.h>     // -> open
 #include <netdb.h>     // -> getaddrinfo
 #include <arpa/inet.h> // -> htons
+#include <time.h>      // -> clock_gettime
 
 #include "common.h"
 
@@ -18,35 +19,54 @@ void func(int sockfd, FILE *outfile, size_t buff_size) {
 	my_packet *packet = malloc(packet_size);
 	bzero(packet, packet_size);
 
+	my_response response = make_response(RESPONSE_OK);
+
 	ssize_t num_bytes = 0;
 	do {
+		write(sockfd, &response, sizeof(response));
+
 		// read data from socket into buffer
 		num_bytes = read(sockfd, packet, packet_size);
 		if (num_bytes == -1) {
 			perror("socket read failed");
-			break; // oops, this means it'll exit with EXIT_SUCCESS...
+			response = make_response(RESPONSE_ERROR);
+			break;
 		}
+
+		printf("Receiving %zd-byte packet.\n", num_bytes);
+
 		if (num_bytes <= (ssize_t)sizeof(my_packet)) {
-			// TODO: what else should be an error? this is the bare minimum.
 			fprintf(stderr, "incomplete packet read\n");
-			break; // ...maybe that doesn't matter though.
+			response = make_response(RESPONSE_ERROR);
+			break;
 		}
 
 		// convert the length back into a usable number
-		packet->length = ntohl(packet->length);
+		packet->length = (int32_t)ntohl((uint32_t)(packet->length));
+
+		// if it's negative, an error occurred,
+		// and we don't need to send a response.
+		if (packet->length < 0) {
+			free(packet);
+			return;
+		}
+
 		// clamp it down to prevent out-of-bounds issues
-		if (packet->length > buff_size) packet->length = (uint32_t)buff_size;
-
-		printf("Receiving %zd-byte buffer from Client.\n",
-			packet->length - sizeof(my_packet));
-
-		// display it
-		fwrite(packet->buffer, sizeof(char), packet->length, stdout);
-		fputc('\n', stdout);
+		if (packet->length > (int32_t)buff_size)
+			packet->length = (int32_t)buff_size;
 
 		// write it into the destination file
 		fwrite(packet->buffer, sizeof(char), packet->length, outfile);
-	} while (packet->length >= buff_size);
+	} while (packet->length >= (int32_t)buff_size);
+
+	// if the currently unsent response isn't an error,
+	// replace it with a goodbye response.
+	if (response_status(response) == 0)
+		response = make_response(RESPONSE_LEAVE);
+
+	// write the final response to the socket
+	if (write(sockfd, &response, sizeof(response)) == -1)
+		perror("failed to send final response");
 
 	free(packet);
 }
@@ -152,8 +172,23 @@ int main(int argc, char *argv[]) {
 	}
 	printf("Server accepted a client!\n");
 
+	// Let's time how long it takes to transfer the thing!
+	struct timespec time_start, time_end;
+	bool valid_time = clock_gettime(CLOCK_MONOTONIC_RAW, &time_start) != -1;
+	if (!valid_time) perror("couldn't get start time");
+
 	// thing to do once we know we have established a server-client connection.
 	func(connfd, outfile, buff_size);
+
+	valid_time &= clock_gettime(CLOCK_MONOTONIC_RAW, &time_end) != -1;
+	if (valid_time) {
+		// From https://stackoverflow.com/a/41959179/
+		double time_elapsed = (time_end.tv_nsec - time_start.tv_nsec) / 1e9 +
+			(time_end.tv_sec - time_start.tv_sec);
+		printf("Time Elapsed: %f sec\n", time_elapsed);
+	} else {
+		perror("couldn't get end time");
+	}
 
 	// Cleanup
 
