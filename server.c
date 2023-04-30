@@ -46,21 +46,25 @@ void func(int sockfd, FILE *outfile, size_t buff_size) {
 		// if it's negative, an error occurred,
 		// and we don't need to send a response.
 		if (packet->length < 0) {
-			printf("Received error packet. Quitting.\n");
+			fprintf(stderr, "client sent error packet\n");
 			free(packet);
 			return;
+		}
+
+		// freak out about out-of-bounds lengths
+		if ((size_t)(packet->length) > buff_size) {
+			fprintf(stderr, "huge packet read (expected %zd, got %d)\n",
+				buff_size, packet->length);
+			response = make_response(RESPONSE_ERROR);
+			break;
 		}
 
 		printf("Receiving %zd-byte packet containing %d bytes of data.\n",
 			num_bytes, packet->length);
 
-		// clamp it down to prevent out-of-bounds issues
-		if (packet->length > (int32_t)buff_size)
-			packet->length = (int32_t)buff_size;
-
 		// write it into the destination file
 		fwrite(packet->buffer, sizeof(char), packet->length, outfile);
-	} while (packet->length >= (int32_t)buff_size);
+	} while ((size_t)(packet->length) >= buff_size);
 
 	// if the currently unsent response isn't an error,
 	// replace it with a goodbye response.
